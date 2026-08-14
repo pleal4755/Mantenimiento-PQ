@@ -33,7 +33,7 @@
   .brand{padding:18px 18px 14px;border-bottom:1px solid var(--line)}
   .brand .logo{display:flex;align-items:center;gap:10px}
   .brand .mark{width:34px;height:34px;border-radius:8px;flex:0 0 34px;background:conic-gradient(from 220deg,var(--blue) 0 35%,var(--amber) 35% 60%,var(--blue-d) 60% 100%);display:grid;place-items:center;color:#0e141b;font-weight:800;font-family:var(--disp);font-size:17px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
-  .brand h1{font-family:var(--disp);font-size:18px;letter-spacing:.5px;line-height:1}
+  .brand h1{font-family:var(--disp);font-size:18px;letter-spacing:.5px;line-height:1;text-transform:uppercase}
   .brand .sub{font-size:10.5px;color:var(--ink3);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
   .nav{padding:10px 10px;flex:1;overflow:auto}
   .nav .grp{font-size:10px;letter-spacing:1.6px;text-transform:uppercase;color:var(--ink3);padding:14px 10px 6px}
@@ -172,7 +172,7 @@
   <aside class="side" id="side">
     <div class="brand">
       <div class="logo"><div class="mark">B</div>
-        <div><h1>BIOSKA GMAO</h1><div class="sub" id="brandPlant">Planta</div></div></div>
+        <div><h1 id="brandPlant">PLANTA PQ</h1><div class="sub">Gestión Mantto</div></div></div>
     </div>
     <nav class="nav" id="nav"></nav>
     <div class="foot"><b id="footUser">—</b><br>Basado en auditoría IMGC Inc.<br><span id="storeState">Datos compartidos</span></div>
@@ -227,7 +227,9 @@ function updateStoreState(){
 }
 
 /* ============ BACKEND GOOGLE SHEETS (Apps Script) — PLANTA PQ ============ */
-/* >>> https://script.google.com/macros/s/AKfycbxm8DlHVZwStRXbwOUWONkb-paWPpElNN_sFpGaWSwY8dIxgNOgAtc3TFI_P3LbkMYEag/exec';
+/* >>> PEGA AQUÍ, UNA SOLA VEZ, LA URL /exec DEL APPS SCRIPT DE ESTA PLANTA <<<
+   Ejemplo:
+   const BACKEND_URL_FIJA='https://script.google.com/macros/s/AKfy....../exec';
    Al quedar escrita aquí, TODAS las máquinas que abran este archivo se conectan
    solas a Google Sheets: el usuario final no configura nada.
    Si se deja vacío (''), el sistema funciona en modo local de demostración. */

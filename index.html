@@ -436,27 +436,36 @@ function showMecPick(){
       <div class="av" style="background:${m.color}">${initials(m.nombre)}</div>
       <div><div style="font-weight:700;font-size:13.5px">${esc(m.nombre)}</div><div class="mini">${esc(m.especialidad)}</div></div></div>`).join('')}</div>`;
 }
+let _busyAction=false;
+function guardAction(){ if(_busyAction) return false; _busyAction=true; return true; }
+function releaseAction(){ setTimeout(function(){_busyAction=false;},450); }
 async function loginAdmin(){
-  if(isBackend()){
-    const pin=prompt('Clave de administrador:')||'';
-    try{const d=await apiCall('login',{user:'admin',pin});API.token=d.token;API.role='admin';SESSION={role:'admin',mecId:null};
-      await loadAll();afterLogin();}catch(e){toast(e.message);}
-    return;
-  }
-  const pin=DB.config.adminPin;
-  if(pin){const v=prompt('Clave de administrador:');if(v!==pin){toast('Clave incorrecta');return;}}
-  SESSION={role:'admin',mecId:null};API.role='admin';afterLogin();
+  if(!guardAction())return;
+  try{
+    if(isBackend()){
+      const pin=prompt('Clave de administrador:')||'';
+      try{const d=await apiCall('login',{user:'admin',pin});API.token=d.token;API.role='admin';SESSION={role:'admin',mecId:null};
+        await loadAll();afterLogin();}catch(e){toast(e.message);}
+      return;
+    }
+    const pin=DB.config.adminPin;
+    if(pin){const v=prompt('Clave de administrador:');if(v!==pin){toast('Clave incorrecta');return;}}
+    SESSION={role:'admin',mecId:null};API.role='admin';afterLogin();
+  } finally { releaseAction(); }
 }
 async function loginMec(id){
-  const m=mecanico(id);if(!m)return;
-  if(isBackend()){
-    const pin=prompt('PIN de '+m.nombre+':')||'';
-    try{const d=await apiCall('login',{user:id,pin});API.token=d.token;API.role='mec';API.mecId=id;SESSION={role:'mec',mecId:id};
-      await loadAll();afterLogin();}catch(e){toast(e.message);}
-    return;
-  }
-  if(m.pin){const v=prompt('PIN de '+m.nombre+':');if(v!==m.pin){toast('PIN incorrecto');return;}}
-  SESSION={role:'mec',mecId:id};API.role='mec';API.mecId=id;afterLogin();
+  if(!guardAction())return;
+  try{
+    const m=mecanico(id);if(!m)return;
+    if(isBackend()){
+      const pin=prompt('PIN de '+m.nombre+':')||'';
+      try{const d=await apiCall('login',{user:id,pin});API.token=d.token;API.role='mec';API.mecId=id;SESSION={role:'mec',mecId:id};
+        await loadAll();afterLogin();}catch(e){toast(e.message);}
+      return;
+    }
+    if(m.pin){const v=prompt('PIN de '+m.nombre+':');if(v!==m.pin){toast('PIN incorrecto');return;}}
+    SESSION={role:'mec',mecId:id};API.role='mec';API.mecId=id;afterLogin();
+  } finally { releaseAction(); }
 }
 function afterLogin(){
   $('#brandPlant').textContent=DB.config.planta||'Planta';
@@ -705,9 +714,9 @@ async function saveOt(id,solId){
     if(solId){const s=DB.solicitudes.find(x=>x.id===solId);if(s)s.status='Convertida';}}
   await save();closeModal();render();toast('OT '+data.num+' guardada');
 }
-async function delOt(id){if(!confirm('¿Eliminar esta OT?'))return;const o=DB.ots.find(x=>x.id===id);
+async function delOt(id){if(!guardAction())return;try{if(!confirm('¿Eliminar esta OT?'))return;const o=DB.ots.find(x=>x.id===id);
   if(o&&o.pmrId){const p=pmr(o.pmrId);if(p&&p.otActiva===id)p.otActiva='';}
-  DB.ots=DB.ots.filter(o=>o.id!==id);await save();closeModal();render();}
+  DB.ots=DB.ots.filter(o=>o.id!==id);await save();closeModal();render();}finally{releaseAction();}}
 function cargaMec(id){return DB.ots.filter(o=>o.mecanico===id&&o.status!=='Terminada'&&o.status!=='Cancelada').length;}
 function assignOt(id){
   const o=DB.ots.find(x=>x.id===id);
@@ -800,7 +809,7 @@ async function savePmr(id){
   if(id){Object.assign(pmr(id),data);}else{data.id=uid('p_');data.otActiva='';data.ultimo='';DB.pmrs.push(data);}
   await save();closeModal();render();toast('Rutina preventiva guardada');
 }
-async function delPmr(id){if(!confirm('¿Eliminar esta rutina?'))return;DB.pmrs=DB.pmrs.filter(p=>p.id!==id);await save();closeModal();render();}
+async function delPmr(id){if(!guardAction())return;try{if(!confirm('¿Eliminar esta rutina?'))return;DB.pmrs=DB.pmrs.filter(p=>p.id!==id);await save();closeModal();render();}finally{releaseAction();}}
 function bumpHoras(id){const p=pmr(id);const v=prompt('Horas-máquina a sumar (lectura del horómetro):','40');if(v===null)return;
   p.horasAcum=(+p.horasAcum||0)+(+v||0);save().then(()=>{render();toast('Horas actualizadas: '+p.horasAcum+' h');});}
 async function genOtFromPmr(id){
@@ -875,7 +884,7 @@ async function saveAct(id){
   if(id){Object.assign(DB.activos.find(x=>x.id===id),data);}else{data.id=uid('a_');DB.activos.push(data);}
   await save();closeModal();render();toast('Activo guardado');
 }
-async function delAct(id){if(!confirm('¿Eliminar activo?'))return;DB.activos=DB.activos.filter(a=>a.id!==id);await save();closeModal();render();}
+async function delAct(id){if(!guardAction())return;try{if(!confirm('¿Eliminar activo?'))return;DB.activos=DB.activos.filter(a=>a.id!==id);await save();closeModal();render();}finally{releaseAction();}}
 
 /* ============ MECANICOS ============ */
 function viewMecanicos(){
@@ -922,9 +931,9 @@ async function saveMec(id){
   if(id){Object.assign(DB.mecanicos.find(x=>x.id===id),data);}else{data.id=uid('m_');DB.mecanicos.push(data);}
   await save();closeModal();render();toast('Mecánico guardado');
 }
-async function delMec(id){if(!confirm('¿Eliminar mecánico? Sus OT quedarán sin asignar.'))return;
+async function delMec(id){if(!guardAction())return;try{if(!confirm('¿Eliminar mecánico? Sus OT quedarán sin asignar.'))return;
   DB.mecanicos=DB.mecanicos.filter(m=>m.id!==id);DB.ots.forEach(o=>{if(o.mecanico===id){o.mecanico='';if(o.status==='Asignada')o.status='Pendiente';}});
-  DB.pmrs.forEach(p=>{if(p.mecSug===id)p.mecSug='';});await save();closeModal();render();}
+  DB.pmrs.forEach(p=>{if(p.mecSug===id)p.mecSug='';});await save();closeModal();render();}finally{releaseAction();}}
 
 /* ============ VISTA MECANICO (su usuario) ============ */
 function viewMisOrdenes(){

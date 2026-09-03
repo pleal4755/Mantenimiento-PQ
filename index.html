@@ -233,7 +233,7 @@ function updateStoreState(){
    Al quedar escrita aquí, TODAS las máquinas que abran este archivo se conectan
    solas a Google Sheets: el usuario final no configura nada.
    Si se deja vacío (''), el sistema funciona en modo local de demostración. */
-const BACKEND_URL_FIJA='https://script.google.com/macros/s/AKfycbxm8DlHVZwStRXbwOUWONkb-paWPpElNN_sFpGaWSwY8dIxgNOgAtc3TFI_P3LbkMYEag/exec';
+const BACKEND_URL_FIJA='';
 
 const API={url:'',token:'',role:'',mecId:''};
 function isBackend(){return !!API.url;}
@@ -768,12 +768,21 @@ function viewPreventivo(){
       :`<tr><td colspan="8" class="empty">Sin rutinas. Crea las rutinas de los activos críticos A y PCC primero.</td></tr>`}</tbody></table></div></div>`;
 }
 function freqLabel(d){const f=FREQ_PRESETS.find(x=>x[1]===d);return f?f[0]:(d+' días');}
+function pmrActOptions(ut,selId){
+  return DB.activos.filter(a=>!ut||a.ut===ut).map(a=>`<option value="${a.id}" ${a.id===selId?'selected':''}>${a.codigo} — ${a.desc} (${a.crit})</option>`).join('')
+    ||'<option value="">— sin activos en esta ubicación —</option>';
+}
+function pmrUtChange(){$('#p_activo').innerHTML=pmrActOptions($('#p_ut').value,'');}
 function openPmrForm(id){
   const p=id?pmr(id):{activo:DB.activos[0]?.id||'',componente:'',tarea:'',tipo:'Calendario',freqDias:30,freqHoras:500,prox:today(),horasAcum:0,mecSug:'',hrsEst:1,repuestos:'',proveedor:false};
-  const actOpts=DB.activos.map(a=>`<option value="${a.id}" ${p.activo===a.id?'selected':''}>${a.codigo} — ${a.desc} (${a.crit})</option>`).join('');
+  const selUt=p.activo?(activo(p.activo)?.ut||''):'';
+  const utList=[...new Set(DB.activos.map(a=>a.ut).filter(Boolean))].sort();
+  const utOpts=`<option value="">— Todas —</option>`+utList.map(u=>`<option value="${esc(u)}" ${u===selUt?'selected':''}>${esc(u)}</option>`).join('');
+  const actOpts=pmrActOptions(selUt,p.activo);
   const mecOpts=`<option value="">— sin sugerir —</option>`+DB.mecanicos.map(m=>`<option value="${m.id}" ${p.mecSug===m.id?'selected':''}>${m.nombre} · ${m.especialidad}</option>`).join('');
   setModal(id?'Editar rutina PMR':'Nueva rutina preventiva (PMR)',`
-    <div class="fgrid fg2">
+    <div class="fgrid fg3">
+      <div class="field"><label>Ubicación técnica</label><select id="p_ut" onchange="pmrUtChange()">${utOpts}</select></div>
       <div class="field"><label>Activo / Equipo</label><select id="p_activo">${actOpts}</select></div>
       <div class="field"><label>Mecanismo / Componente</label><input id="p_comp" value="${esc(p.componente)}" placeholder="Ej. Rodamientos del plato"></div>
     </div>

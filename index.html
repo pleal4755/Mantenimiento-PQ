@@ -256,6 +256,8 @@ const CLASES_OT=['Preventivo (PMR)','Correctivo','Emergencia','Predictivo','Proy
 const FREQ_PRESETS=[['Diaria',1],['Semanal',7],['Quincenal',15],['Mensual',30],['Bimensual',60],['Trimestral',90],['Semestral',180],['Anual',365]];
 
 function addDays(d,n){const x=new Date(d+'T00:00:00');x.setDate(x.getDate()+n);return x.toISOString().slice(0,10);}
+const DIAS_SEMANA=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+function nextDow(base,dow){let d=addDays(base,1);for(let i=0;i<7;i++){if(new Date(d+'T00:00:00').getDay()===+dow)return d;d=addDays(d,1);}return d;}
 function seedData(){
   const t=new Date().toISOString().slice(0,10);
   return {
@@ -295,7 +297,19 @@ async function loadAll(){
   Object.assign(DB,s);normalizeDB();
 }
 async function save(){
-  if(isBackend()){ if(API.role==='admin') await apiCall('saveAll',{db:DB}); return; }
+  if(isBackend()){
+    if(API.role==='admin'){
+      try{
+        const d=await apiCall('saveAll',{db:DB});
+        DB._rev=d.rev;
+      }catch(e){
+        await loadAll();render();closeModal();
+        toast('⚠ No se guardó: '+e.message);
+        throw e;
+      }
+    }
+    return;
+  }
   await sSet('bioska_db',DB);
 }
 /* Guardado granular del mecánico (solo su OT) */
@@ -747,10 +761,11 @@ function viewPreventivo(){
   <div class="note amber" style="margin-bottom:14px"><span class="ni">📅</span> Cada rutina genera su OT automáticamente al vencer (por calendario u horómetro). Al cerrar la OT, el sistema reprograma el próximo vencimiento.</div>
   <div class="toolbar"><div style="flex:1"></div><button class="btn primary" onclick="openPmrForm()">+ Nueva rutina (PMR)</button></div>
   ${dues.length?`<div class="card" style="margin-bottom:16px;border-color:var(--amber-d)"><div class="hd"><h3>Vencen / vencidas — generar OT</h3><div class="act"><span class="chip warn">${dues.length}</span></div></div>
-    <div class="scrollx"><table class="tbl"><thead><tr><th>Activo</th><th>Tarea</th><th>Tipo</th><th>Vence</th><th>Mecánico sug.</th><th></th></tr></thead>
+    <div class="scrollx"><table class="tbl"><thead><tr><th>Activo</th><th>Tarea</th><th>Ubic. técnica</th><th>Tipo</th><th>Vence</th><th>Mecánico sug.</th><th></th></tr></thead>
     <tbody>${dues.map(({p,e})=>{const a=activo(p.activo);return `<tr class="${e.st==='vencida'?'due-row':'soon-row'}">
       <td><span class="code">${a?esc(a.codigo):''}</span> ${a?esc(a.desc):'—'}</td>
       <td>${esc(p.componente)} — ${esc(p.tarea)}</td>
+      <td class="mini">${esc(a?.ut||'—')}</td>
       <td class="nowrap">${p.tipo}</td>
       <td class="nowrap">${p.tipo==='Calendario'?(e.dias<0?`<span style="color:var(--red)">Hace ${Math.abs(e.dias)}d</span>`:`En ${e.dias}d`):(e.falta<=0?`<span style="color:var(--red)">${p.horasAcum}/${p.freqHoras} h</span>`:`${p.horasAcum}/${p.freqHoras} h`)}</td>
       <td>${p.mecSug?`<span class="dot" style="background:${mecanico(p.mecSug)?.color||'#999'}"></span> ${esc(mecanico(p.mecSug)?.nombre||'')}`:'<span class="mini">—</span>'}</td>
@@ -774,7 +789,7 @@ function pmrActOptions(ut,selId){
 }
 function pmrUtChange(){$('#p_activo').innerHTML=pmrActOptions($('#p_ut').value,'');}
 function openPmrForm(id){
-  const p=id?pmr(id):{activo:DB.activos[0]?.id||'',componente:'',tarea:'',tipo:'Calendario',freqDias:30,freqHoras:500,prox:today(),horasAcum:0,mecSug:'',hrsEst:1,repuestos:'',proveedor:false};
+  const p=id?pmr(id):{activo:DB.activos[0]?.id||'',componente:'',tarea:'',tipo:'Calendario',freqDias:30,freqHoras:500,prox:today(),horasAcum:0,mecSug:'',hrsEst:1,repuestos:'',proveedor:false,diaSemana:''};
   const selUt=p.activo?(activo(p.activo)?.ut||''):'';
   const utList=[...new Set(DB.activos.map(a=>a.ut).filter(Boolean))].sort();
   const utOpts=`<option value="">— Todas —</option>`+utList.map(u=>`<option value="${esc(u)}" ${u===selUt?'selected':''}>${esc(u)}</option>`).join('');
@@ -791,8 +806,13 @@ function openPmrForm(id){
     <div class="fgrid fg3">
       <div class="field"><label>Base de la frecuencia</label><select id="p_tipo" onchange="pmrTipoChange()">
         <option ${p.tipo==='Calendario'?'selected':''}>Calendario</option><option ${p.tipo==='Horómetro'?'selected':''}>Horómetro</option></select></div>
-      <div class="field" id="p_calWrap"><label>Cada</label><select id="p_freqDias">${FREQ_PRESETS.map(([l,d])=>`<option value="${d}" ${p.freqDias==d?'selected':''}>${l} (${d}d)</option>`).join('')}</select></div>
-      <div class="field" id="p_calProx"><label>Próximo vencimiento</label><input type="date" id="p_prox" value="${p.prox||today()}"></div>
+      <div class="field" id="p_calWrap"><label>Cada</label><select id="p_freqDias" onchange="pmrFreqChange()">${FREQ_PRESETS.map(([l,d])=>`<option value="${d}" ${p.freqDias==d?'selected':''}>${l} (${d}d)</option>`).join('')}</select>
+        <select id="p_dow" onchange="pmrDowChange()" style="margin-top:6px;display:none">
+          <option value="">— día no fijo —</option>
+          ${DIAS_SEMANA.map((d,i)=>`<option value="${i}" ${String(p.diaSemana)===String(i)?'selected':''}>${d}</option>`).join('')}
+        </select></div>
+      <div class="field" id="p_calProx"><label>Próximo vencimiento</label><input type="date" id="p_prox" value="${p.prox||today()}">
+        <div class="mini" id="p_dowHint" style="margin-top:4px;display:none"></div></div>
       <div class="field" id="p_horWrap"><label>Cada (horas-máquina)</label><input type="number" id="p_freqHoras" value="${p.freqHoras||500}"></div>
       <div class="field" id="p_horAcum"><label>Horas acumuladas</label><input type="number" id="p_horasAcum" value="${p.horasAcum||0}"></div>
     </div>
@@ -805,15 +825,28 @@ function openPmrForm(id){
     <div class="field" style="margin-top:13px"><label>Repuestos / materiales</label><input id="p_rep" value="${esc(p.repuestos||'')}" placeholder="Ej. Grasa NLGI 2, sello mecánico…"></div>`,
     [id?{t:'Eliminar',cls:'danger',fn:`delPmr('${id}')`}:null,{t:'Cancelar',cls:'ghost',fn:'closeModal()'},
      {t:id?'Guardar':'Crear rutina',cls:'primary',fn:`savePmr('${id||''}')`}].filter(Boolean));
-  setTimeout(pmrTipoChange,20);
+  setTimeout(()=>{pmrTipoChange();pmrFreqChange();},20);
 }
 function pmrTipoChange(){const cal=$('#p_tipo').value==='Calendario';
   ['p_calWrap','p_calProx'].forEach(i=>$('#'+i).style.display=cal?'':'none');
   ['p_horWrap','p_horAcum'].forEach(i=>$('#'+i).style.display=cal?'none':'');}
+function pmrFreqChange(){
+  const weekly=$('#p_freqDias').value=='7';
+  $('#p_dow').style.display=weekly?'':'none';
+  $('#p_dowHint').style.display=(weekly&&$('#p_dow').value!=='')?'':'none';
+  if(weekly&&$('#p_dow').value!=='')updateDowHint();
+}
+function pmrDowChange(){
+  const dow=$('#p_dow').value;
+  $('#p_dowHint').style.display=dow!==''?'':'none';
+  if(dow!==''){$('#p_prox').value=nextDow(today(),dow);updateDowHint();}
+}
+function updateDowHint(){$('#p_dowHint').innerHTML='Se actualiza cada <b>'+DIAS_SEMANA[+$('#p_dow').value]+'</b> en automático';}
 async function savePmr(id){
   const tipo=$('#p_tipo').value;
   const data={activo:$('#p_activo').value,componente:$('#p_comp').value.trim(),tarea:$('#p_tarea').value.trim(),tipo,
     freqDias:+$('#p_freqDias').value,prox:$('#p_prox').value,freqHoras:+$('#p_freqHoras').value,horasAcum:+$('#p_horasAcum').value,
+    diaSemana:$('#p_dow').value,
     mecSug:$('#p_mec').value,hrsEst:+$('#p_hrs').value,proveedor:$('#p_prov').value==='1',repuestos:$('#p_rep').value.trim()};
   if(id){Object.assign(pmr(id),data);}else{data.id=uid('p_');data.otActiva='';data.ultimo='';DB.pmrs.push(data);}
   await save();closeModal();render();toast('Rutina preventiva guardada');
@@ -834,7 +867,7 @@ async function genOtFromPmr(id){
 function advancePmr(ot){
   if(!ot.pmrId)return;const p=pmr(ot.pmrId);if(!p)return;
   p.otActiva='';p.ultimo=today();
-  if(p.tipo==='Calendario')p.prox=addDays(today(),p.freqDias);
+  if(p.tipo==='Calendario')p.prox=(p.diaSemana!==undefined&&p.diaSemana!=='')?nextDow(today(),p.diaSemana):addDays(today(),p.freqDias);
   else p.horasAcum=0;
 }
 

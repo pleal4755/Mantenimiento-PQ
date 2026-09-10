@@ -621,11 +621,13 @@ function viewSol(id){
     ${kv('Disponible',fmtDate(s.disponible))}${kv('Origen',s.origen||'Manual')}${kv('Solicitante',s.solicitante||'—')}${kv('Recibe',s.recibe||'—')}</div>
     <div class="field" style="margin-top:14px"><label>Descripción</label><div style="background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:11px;font-size:13px">${esc(s.desc)||'<span class="mini">Sin descripción</span>'}</div></div>
     <div class="field" style="margin-top:12px"><label>Estado</label>${solBadge(s.status)}</div>`,
-    [s.status==='Pendiente'?{t:'Rechazar',cls:'danger',fn:`rejectSol('${s.id}')`}:null,
+    [{t:'Eliminar',cls:'danger',fn:`delSol('${s.id}')`},
+     s.status==='Pendiente'?{t:'Rechazar',cls:'danger',fn:`rejectSol('${s.id}')`}:null,
      s.status==='Pendiente'?{t:'→ Generar OT',cls:'primary',fn:`closeModal();convertSol('${s.id}')`}:null,
      {t:'Cerrar',cls:'ghost',fn:'closeModal()'}].filter(Boolean));
 }
 async function rejectSol(id){const s=DB.solicitudes.find(x=>x.id===id);s.status='Rechazada';await save();closeModal();render();}
+async function delSol(id){if(!guardAction())return;try{if(!confirm('¿Eliminar esta solicitud?'))return;DB.solicitudes=DB.solicitudes.filter(s=>s.id!==id);await save();closeModal();render();toast('Solicitud eliminada');}finally{releaseAction();}}
 function convertSol(id){const s=DB.solicitudes.find(x=>x.id===id);if(s)openOtForm(null,s);}
 
 /* ============ ORDENES DE TRABAJO ============ */

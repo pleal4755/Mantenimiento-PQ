@@ -676,8 +676,9 @@ function openOtForm(id,fromSol){
       <div class="field"><label>Clase de OT</label><select id="o_clase">${CLASES_OT.map(c=>`<option ${base.clase===c?'selected':''}>${c}</option>`).join('')}</select></div>
       <div class="field"><label>Prioridad</label><select id="o_prio">${Object.entries(PRIORIDADES).map(([k,v])=>`<option value="${k}" ${base.prioridad==k?'selected':''}>${k}. ${v}</option>`).join('')}</select></div>
     </div>
-    <div class="fgrid fg2" style="margin-top:13px">
-      <div class="field"><label>Activo / Equipo</label><select id="o_activo"><option value="">— seleccionar —</option>${actOpts}</select></div>
+    <div class="fgrid fg3" style="margin-top:13px">
+      <div class="field"><label>Activo / Equipo</label><select id="o_activo" onchange="otActivoChange()"><option value="">— seleccionar —</option>${actOpts}</select></div>
+      <div class="field"><label>Ubicación técnica</label><div id="o_ut" style="font-size:14px;font-weight:600;padding-top:9px">${esc(activo(base.activo)?.ut||'—')}</div></div>
       <div class="field"><label>Equipo (texto libre)</label><input id="o_equipoTxt" value="${esc(base.equipoTxt||'')}" placeholder="Opcional si no está catalogado"></div>
     </div>
     <div class="fgrid fg3" style="margin-top:13px">
@@ -712,6 +713,7 @@ function openOtForm(id,fromSol){
     [o?{t:'Eliminar',cls:'danger',fn:`delOt('${o.id}')`}:null,{t:'Cancelar',cls:'ghost',fn:'closeModal()'},
      {t:o?'Guardar cambios':'Crear OT',cls:'primary',fn:`saveOt('${o?o.id:''}','${fromSol?fromSol.id:''}')`}].filter(Boolean),'lg');
 }
+function otActivoChange(){$('#o_ut').textContent=activo($('#o_activo').value)?.ut||'—';}
 function taskRow(t,i){return `<div class="fgrid" style="grid-template-columns:auto 1fr;gap:9px;margin-bottom:8px" data-task>
   <input type="checkbox" ${t.done?'checked':''} style="width:20px;height:20px;margin-top:6px" data-tdone>
   <input value="${esc(t.t||'')}" placeholder="Actividad ${i+1}" data-ttext></div>`;}
@@ -1046,8 +1048,8 @@ async function doFinish(id){const o=DB.ots.find(x=>x.id===id);
 function otDetail(id){
   const o=DB.ots.find(x=>x.id===id);const a=activo(o.activo);const m=mecanico(o.mecanico);
   setModal('OT '+o.num+' — detalle',`
-    <div class="fgrid fg2">${kv('Equipo',a?a.codigo+' · '+a.desc:o.equipoTxt||'—')}${kv('Clase',o.clase)}
-      ${kv('Prioridad',PRIORIDADES[o.prioridad])}${kv('Programada',fmtDate(o.fechaProg))}
+    <div class="fgrid fg2">${kv('Equipo',a?a.codigo+' · '+a.desc:o.equipoTxt||'—')}${kv('Ubicación técnica',a?.ut||'—')}
+      ${kv('Clase',o.clase)}${kv('Prioridad',PRIORIDADES[o.prioridad])}${kv('Programada',fmtDate(o.fechaProg))}
       ${kv('Asignada a',m?m.nombre:'—')}${kv('Estado',o.status)}</div>
     <div class="field" style="margin-top:12px"><label>Descripción</label><div style="background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:11px;font-size:13px">${esc(o.desc)||'—'}</div></div>
     <div class="field" style="margin-top:12px"><label>Tareas</label><div style="font-size:13px">${(o.tareas||[]).map(t=>`<div>${t.done?'✅':'⬜'} ${esc(t.t)}</div>`).join('')||'—'}</div></div>

@@ -247,7 +247,7 @@ async function apiCall(action,payload){
 async function loadBackendUrl(){ API.url=BACKEND_URL_FIJA||''; }
 
 /* ============ ESTADO ============ */
-const DB={config:{},activos:[],mecanicos:[],solicitudes:[],ots:[],pmrs:[]};
+const DB={config:{},activos:[],mecanicos:[],solicitudes:[],ots:[],pmrs:[],componentes:[],reemplazos:[]};
 let SESSION={role:null,mecId:null};
 let CURRENT='';
 const PRIORIDADES={1:'Emergencia',2:'Próx. día/turno',3:'Próx. semana',4:'Próx. mantto prev.'};
@@ -280,11 +280,17 @@ function seedData(){
       {id:'p2',activo:'a3',componente:'Banda / rodillos',tarea:'Revisión de tensión y alineación',tipo:'Calendario',freqDias:30,freqHoras:0,prox:addDays(t,3),horasAcum:0,mecSug:'M4',hrsEst:2,repuestos:'',proveedor:false,otActiva:'',ultimo:''},
       {id:'p3',activo:'a4',componente:'Motor / reductor',tarea:'Inspección y cambio de aceite',tipo:'Horómetro',freqDias:0,freqHoras:500,prox:'',horasAcum:520,mecSug:'M1',hrsEst:2,repuestos:'Aceite ISO 220',proveedor:false,otActiva:'',ultimo:''}
     ],
+    componentes:[
+      {id:'c1',activo:'a2',nombre:'Rodamiento eje principal',categoria:'Mecánico',critico:true},
+      {id:'c2',activo:'a2',nombre:'Sello mecánico',categoria:'Mecánico',critico:false},
+      {id:'c3',activo:'a2',nombre:'Motor eléctrico',categoria:'Eléctrico',critico:true}
+    ],
+    reemplazos:[],
     solicitudes:[],ots:[]
   };
 }
 
-function normalizeDB(){['activos','mecanicos','solicitudes','ots','pmrs'].forEach(k=>{if(!Array.isArray(DB[k]))DB[k]=[];});if(!DB.config)DB.config={planta:'Planta',adminPin:''};}
+function normalizeDB(){['activos','mecanicos','solicitudes','ots','pmrs','componentes','reemplazos'].forEach(k=>{if(!Array.isArray(DB[k]))DB[k]=[];});if(!DB.config)DB.config={planta:'Planta',adminPin:''};}
 async function loadAll(){
   if(isBackend()){
     if(API.role==='admin'){const d=await apiCall('getAll');Object.assign(DB,d.db);}
@@ -566,16 +572,17 @@ function viewTablero(){
 
 /* ============ SOLICITUDES ============ */
 let solFilter='Todas';
+function solFilteredList(){return DB.solicitudes.filter(s=>solFilter==='Todas'||s.status===solFilter).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));}
 function viewSolicitudes(){
-  const list=DB.solicitudes.filter(s=>solFilter==='Todas'||s.status===solFilter).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
   return `<div class="toolbar">
     <div class="seg">${['Todas','Pendiente','Convertida','Rechazada'].map(f=>`<button class="${solFilter===f?'on':''}" onclick="solFilter='${f}';render()">${f}</button>`).join('')}</div>
-    <div class="search"><span class="si">🔎</span><input id="solSearch" placeholder="Buscar equipo, descripción…" oninput="render()" value="${esc($('#solSearch')?.value||'')}"></div>
+    <div class="search"><span class="si">🔎</span><input id="solSearch" placeholder="Buscar equipo, descripción…" oninput="filterSolicitudes()" value="${esc($('#solSearch')?.value||'')}"></div>
     <button class="btn primary" onclick="openSolForm()">+ Nueva solicitud / falla</button></div>
     <div class="card"><div class="scrollx"><table class="tbl">
     <thead><tr><th>#</th><th>Fecha</th><th>Equipo / Área</th><th>Tipo</th><th>Prioridad</th><th>Origen</th><th>Estado</th><th></th></tr></thead>
-    <tbody>${renderSolRows(list)}</tbody></table></div></div>`;
+    <tbody id="solBody">${renderSolRows(solFilteredList())}</tbody></table></div></div>`;
 }
+function filterSolicitudes(){const el=$('#solBody');if(el)el.innerHTML=renderSolRows(solFilteredList());}
 function renderSolRows(list){
   const q=($('#solSearch')?.value||'').toLowerCase();
   const f=list.filter(s=>!q||(s.equipo+' '+s.desc+' '+s.num).toLowerCase().includes(q));
@@ -632,36 +639,64 @@ function convertSol(id){const s=DB.solicitudes.find(x=>x.id===id);if(s)openOtFor
 
 /* ============ ORDENES DE TRABAJO ============ */
 let otFilter='Activas';
-function viewOts(){
+let otUtFilter='',otActivoFilter='',otMecFilter='';
+function otsFilteredList(){
   let list=DB.ots.slice();
   if(otFilter==='Activas')list=list.filter(o=>o.status!=='Terminada'&&o.status!=='Cancelada');
   else if(otFilter!=='Todas')list=list.filter(o=>o.status===otFilter);
+  if(otUtFilter)list=list.filter(o=>activo(o.activo)?.ut===otUtFilter);
+  if(otActivoFilter)list=list.filter(o=>o.activo===otActivoFilter);
+  if(otMecFilter)list=list.filter(o=>otMecFilter==='__sin__'?!o.mecanico:o.mecanico===otMecFilter);
   list.sort((a,b)=>(b.num||'').localeCompare(a.num||''));
+  return list;
+}
+function otUtChange(){otUtFilter=$('#ot_fUt').value;otActivoFilter='';render();}
+function otActivoFilterChange(){otActivoFilter=$('#ot_fActivo').value;render();}
+function otMecFilterChange(){otMecFilter=$('#ot_fMec').value;render();}
+function clearOtFilters(){otUtFilter='';otActivoFilter='';otMecFilter='';render();}
+function viewOts(){
+  const utList=[...new Set(DB.activos.map(a=>a.ut).filter(Boolean))].sort();
+  const utOpts=`<option value="">— Todas las ubicaciones —</option>`+utList.map(u=>`<option value="${esc(u)}" ${otUtFilter===u?'selected':''}>${esc(u)}</option>`).join('');
+  const actOpts=`<option value="">— Todos los equipos —</option>`+DB.activos.filter(a=>!otUtFilter||a.ut===otUtFilter).map(a=>`<option value="${a.id}" ${otActivoFilter===a.id?'selected':''}>${a.codigo} — ${a.desc}</option>`).join('');
+  const mecOpts=`<option value="">— Todos los mecánicos —</option><option value="__sin__" ${otMecFilter==='__sin__'?'selected':''}>— Sin asignar —</option>`+DB.mecanicos.map(m=>`<option value="${m.id}" ${otMecFilter===m.id?'selected':''}>${m.nombre}</option>`).join('');
   return `<div class="toolbar">
     <div class="seg">${['Activas','Todas','Pendiente','Asignada','En proceso','Terminada'].map(f=>`<button class="${otFilter===f?'on':''}" onclick="otFilter='${f}';render()">${f}</button>`).join('')}</div>
-    <div class="search"><span class="si">🔎</span><input id="otSearch" placeholder="Buscar OT, equipo, mecánico…" oninput="render()" value="${esc($('#otSearch')?.value||'')}"></div>
+    <div class="search"><span class="si">🔎</span><input id="otSearch" placeholder="Buscar OT, equipo, mecánico…" oninput="filterOts()" value="${esc($('#otSearch')?.value||'')}"></div>
     <button class="btn primary" onclick="openOtForm()">+ Nueva OT</button></div>
+  <div class="toolbar">
+    <div class="field" style="flex:1;min-width:170px"><label>Ubicación técnica</label><select id="ot_fUt" onchange="otUtChange()">${utOpts}</select></div>
+    <div class="field" style="flex:1;min-width:200px"><label>Equipo</label><select id="ot_fActivo" onchange="otActivoFilterChange()">${actOpts}</select></div>
+    <div class="field" style="flex:1;min-width:180px"><label>Mecánico</label><select id="ot_fMec" onchange="otMecFilterChange()">${mecOpts}</select></div>
+    ${(otUtFilter||otActivoFilter||otMecFilter)?'<button class="btn sm ghost" style="align-self:flex-end" onclick="clearOtFilters()">✕ Limpiar filtros</button>':''}
+  </div>
     <div class="card"><div class="scrollx"><table class="tbl">
-    <thead><tr><th># OT</th><th>Equipo</th><th>Clase</th><th>Prio</th><th>Programada</th><th>Asignada a</th><th>Hrs E/R</th><th>Estado</th><th></th></tr></thead>
-    <tbody>${renderOtRows(list)}</tbody></table></div></div>`;
+    <thead><tr><th># OT</th><th>Equipo</th><th>Clase</th><th>Prio</th><th>Programada</th><th>Asignada a</th><th>Hrs E/R</th><th>Comentarios</th><th>Estado</th><th></th></tr></thead>
+    <tbody id="otsBody">${renderOtRows(otsFilteredList())}</tbody></table></div></div>`;
 }
+function filterOts(){const el=$('#otsBody');if(el)el.innerHTML=renderOtRows(otsFilteredList());updateBadges();}
 function renderOtRows(list){
   const q=($('#otSearch')?.value||'').toLowerCase();
   const f=list.filter(o=>{const a=activo(o.activo);const m=mecanico(o.mecanico);
     return !q||((o.num+' '+(o.equipoTxt||'')+' '+(a?a.codigo+a.desc:'')+' '+(m?m.nombre:'')).toLowerCase().includes(q));});
-  if(!f.length)return `<tr><td colspan="9" class="empty">Sin órdenes de trabajo.</td></tr>`;
-  return f.map(o=>{const a=activo(o.activo);const m=mecanico(o.mecanico);return `<tr>
+  if(!f.length)return `<tr><td colspan="10" class="empty">Sin órdenes de trabajo.</td></tr>`;
+  return f.map(o=>{const a=activo(o.activo);const m=mecanico(o.mecanico);
+    const cmt=o.comentarios?esc(o.comentarios.length>140?o.comentarios.slice(0,140)+'…':o.comentarios):'<span class="mini">—</span>';
+    return `<tr>
     <td class="code">${esc(o.num)}${a&&a.crit?` <span class="pill crit-${a.crit}">${a.crit}</span>`:''}${o.pmrId?' <span class="pill pcc">PMR</span>':''}</td>
     <td>${a?`<span class="code">${esc(a.codigo)}</span> ${esc(a.desc)}`:esc(o.equipoTxt||'—')}</td>
     <td class="nowrap">${esc(o.clase)}</td><td><span class="prio p${o.prioridad}">${o.prioridad}</span></td>
     <td class="nowrap mini">${fmtDate(o.fechaProg)}${o.fechaProg&&o.fechaProg<today()&&o.status!=='Terminada'&&o.status!=='Cancelada'?' <span style="color:var(--red)">⚠</span>':''}</td>
     <td>${m?`<span style="display:inline-flex;align-items:center;gap:7px"><span class="dot" style="background:${m.color}"></span>${esc(m.nombre)}</span>`:'<span class="mini">— sin asignar —</span>'}</td>
-    <td class="mini nowrap">${(o.hrsEst||0)} / ${(o.hrsReal||0)}</td><td>${otBadge(o.status)}</td>
+    <td class="mini nowrap">${(o.hrsEst||0)} / ${(o.hrsReal||0)}</td>
+    <td class="mini" style="max-width:240px;white-space:normal">${cmt}</td>
+    <td>${otBadge(o.status)}</td>
     <td class="rt nowrap"><button class="btn sm amber" onclick="assignOt('${o.id}')">${o.mecanico?'Reasignar':'Asignar'}</button>
     <button class="btn sm ghost" onclick="openOtForm('${o.id}')">Abrir</button></td></tr>`;}).join('');
 }
 function otBadge(s){const m={'Pendiente':'st-pend','Asignada':'st-asig','En proceso':'st-prog','Terminada':'st-term','Cancelada':'st-canc'};return `<span class="st ${m[s]||'st-pend'}">${s}</span>`;}
+let OT_FORM_ID='';
 function openOtForm(id,fromSol){
+  OT_FORM_ID=id||'';
   const o=id?DB.ots.find(x=>x.id===id):null;
   const base=o||{num:nextOtNum(),activo:'',equipoTxt:fromSol?fromSol.equipo:'',clase:fromSol?(fromSol.prioridad==1?'Emergencia':'Correctivo'):'Preventivo (PMR)',
     prioridad:fromSol?fromSol.prioridad:3,fechaProg:fromSol?fromSol.disponible:today(),solRef:fromSol?fromSol.num:'',solRefId:fromSol?fromSol.id:'',
@@ -696,6 +731,8 @@ function openOtForm(id,fromSol){
     <div id="o_tareas">${(base.tareas&&base.tareas.length?base.tareas:[{t:'',done:false}]).map((t,i)=>taskRow(t,i)).join('')}</div>
     <button class="btn sm ghost" type="button" onclick="addTask()">+ Agregar tarea</button>
     <div class="note" style="margin-top:10px"><span class="ni">⚠️</span> TAREA FINAL siempre: dejar el área de trabajo ordenada y limpia (5S).</div>
+    <div class="sectlabel">Piezas reemplazadas (opcional)</div>
+    <div id="o_compsWrap" style="display:flex;flex-direction:column;gap:7px;margin-bottom:6px">${otCompsChecklist(base.activo,OT_FORM_ID)}</div>
     <div class="sectlabel">Mano de obra, repuestos y costos</div>
     <div class="fgrid fg4">
       <div class="field"><label>Hrs. estimadas</label><input type="number" step="0.5" id="o_hest" value="${base.hrsEst||0}"></div>
@@ -713,7 +750,17 @@ function openOtForm(id,fromSol){
     [o?{t:'Eliminar',cls:'danger',fn:`delOt('${o.id}')`}:null,{t:'Cancelar',cls:'ghost',fn:'closeModal()'},
      {t:o?'Guardar cambios':'Crear OT',cls:'primary',fn:`saveOt('${o?o.id:''}','${fromSol?fromSol.id:''}')`}].filter(Boolean),'lg');
 }
-function otActivoChange(){$('#o_ut').textContent=activo($('#o_activo').value)?.ut||'—';}
+function otActivoChange(){
+  $('#o_ut').textContent=activo($('#o_activo').value)?.ut||'—';
+  $('#o_compsWrap').innerHTML=otCompsChecklist($('#o_activo').value,OT_FORM_ID);
+}
+function otCompsChecklist(activoId,otId){
+  const comps=DB.componentes.filter(c=>c.activo===activoId);
+  if(!comps.length)return '<div class="mini">Este activo no tiene piezas registradas (Activos → Piezas).</div>';
+  const already=otId?new Set(DB.reemplazos.filter(r=>r.otId===otId).map(r=>r.componenteId)):new Set();
+  return comps.map(c=>`<label style="display:flex;align-items:center;gap:9px;text-transform:none;letter-spacing:0">
+    <input type="checkbox" data-comp="${c.id}" ${already.has(c.id)?'checked':''}><span style="font-size:13.5px">${esc(c.nombre)}${c.critico?' <span class="pill pcc">Crítica</span>':''}</span></label>`).join('');
+}
 function taskRow(t,i){return `<div class="fgrid" style="grid-template-columns:auto 1fr;gap:9px;margin-bottom:8px" data-task>
   <input type="checkbox" ${t.done?'checked':''} style="width:20px;height:20px;margin-top:6px" data-tdone>
   <input value="${esc(t.t||'')}" placeholder="Actividad ${i+1}" data-ttext></div>`;}
@@ -727,10 +774,19 @@ async function saveOt(id,solId){
     tiempoMuerto:+$('#o_tm').value,seguridad:$('#o_seg').value==='1',costoMO:+$('#o_cmo').value,costoRep:+$('#o_crep').value,costoMisc:+$('#o_cmisc').value,
     comentarios:$('#o_com').value.trim(),recibeOk:$('#o_recibe').value==='1'};
   if(data.mecanico&&data.status==='Pendiente')data.status='Asignada';
-  if(id){const o=DB.ots.find(x=>x.id===id);Object.assign(o,data);if(prevStatus!=='Terminada'&&data.status==='Terminada')advancePmr(o);}
-  else{data.id=uid('o_');data.solRefId=solId||'';data.origen=solId?'Solicitud':'Manual';DB.ots.push(data);
+  let otId;
+  if(id){const o=DB.ots.find(x=>x.id===id);Object.assign(o,data);otId=id;if(prevStatus!=='Terminada'&&data.status==='Terminada')advancePmr(o);}
+  else{data.id=uid('o_');otId=data.id;data.solRefId=solId||'';data.origen=solId?'Solicitud':'Manual';DB.ots.push(data);
     if(solId){const s=DB.solicitudes.find(x=>x.id===solId);if(s)s.status='Convertida';}}
+  syncReemplazos(otId,data.activo);
   await save();closeModal();render();toast('OT '+data.num+' guardada');
+}
+function syncReemplazos(otId,activoId){
+  const wrap=$('#o_compsWrap');if(!wrap)return;
+  const checked=new Set([...wrap.querySelectorAll('input[data-comp]:checked')].map(c=>c.dataset.comp));
+  DB.reemplazos=DB.reemplazos.filter(r=>r.otId!==otId||checked.has(r.componenteId));
+  const existing=new Set(DB.reemplazos.filter(r=>r.otId===otId).map(r=>r.componenteId));
+  checked.forEach(cid=>{if(!existing.has(cid))DB.reemplazos.push({id:uid('r_'),otId,componenteId:cid,activoId,fecha:today()});});
 }
 async function delOt(id){if(!guardAction())return;try{if(!confirm('¿Eliminar esta OT?'))return;const o=DB.ots.find(x=>x.id===id);
   if(o&&o.pmrId){const p=pmr(o.pmrId);if(p&&p.otActiva===id)p.otActiva='';}
@@ -876,17 +932,18 @@ function advancePmr(ot){
 }
 
 /* ============ ACTIVOS ============ */
+function actSortedList(){return DB.activos.slice().sort((a,b)=>(b.critP+b.critM+b.critR)-(a.critP+a.critM+a.critR));}
 function viewActivos(){
-  const list=DB.activos.slice().sort((a,b)=>(b.critP+b.critM+b.critR)-(a.critP+a.critM+a.critR));
-  return `<div class="toolbar"><div class="search"><span class="si">🔎</span><input id="actSearch" placeholder="Buscar código o descripción…" oninput="render()" value="${esc($('#actSearch')?.value||'')}"></div>
+  return `<div class="toolbar"><div class="search"><span class="si">🔎</span><input id="actSearch" placeholder="Buscar código o descripción…" oninput="filterActivos()" value="${esc($('#actSearch')?.value||'')}"></div>
     <button class="btn primary" onclick="openActForm()">+ Nuevo activo</button></div>
     <div class="legend" style="margin-bottom:12px">
       <span><span class="pill crit-A">A</span> &gt;125 pts</span><span><span class="pill crit-B">B</span> 75–125 pts</span>
       <span><span class="pill crit-C">C</span> &lt;75 pts</span><span><span class="pill pcc">PCC</span> Punto Crítico de Control</span></div>
     <div class="card"><div class="scrollx"><table class="tbl">
     <thead><tr><th>Código</th><th>Descripción</th><th>Ubic. técnica</th><th class="ctr">Prod.</th><th class="ctr">Mant.</th><th class="ctr">Red.</th><th class="ctr">Σ</th><th>Criticidad</th><th></th></tr></thead>
-    <tbody>${renderActRows(list)}</tbody></table></div></div>`;
+    <tbody id="actBody">${renderActRows(actSortedList())}</tbody></table></div></div>`;
 }
+function filterActivos(){const el=$('#actBody');if(el)el.innerHTML=renderActRows(actSortedList());}
 function renderActRows(list){
   const q=($('#actSearch')?.value||'').toLowerCase();
   const f=list.filter(a=>!q||(a.codigo+' '+a.desc).toLowerCase().includes(q));
@@ -895,7 +952,47 @@ function renderActRows(list){
     <td class="code">${esc(a.codigo)}</td><td>${esc(a.desc)} ${a.pcc?'<span class="pill pcc">PCC</span>':''}</td>
     <td class="mini">${esc(a.ut||'—')}</td><td class="ctr mini">${a.critP}</td><td class="ctr mini">${a.critM}</td><td class="ctr mini">${a.critR}</td>
     <td class="ctr"><b style="font-family:var(--mono)">${c.total}</b></td><td><span class="pill crit-${c.letra}">Crítico ${c.letra}</span></td>
-    <td class="rt"><button class="btn sm ghost" onclick="openActForm('${a.id}')">Editar</button></td></tr>`;}).join('');
+    <td class="rt nowrap"><button class="btn sm ghost" onclick="openComponentesModal('${a.id}')">Piezas</button>
+    <button class="btn sm ghost" onclick="openActForm('${a.id}')">Editar</button></td></tr>`;}).join('');
+}
+/* ============ COMPONENTES / PIEZAS DE UN ACTIVO ============ */
+function openComponentesModal(activoId){
+  const a=DB.activos.find(x=>x.id===activoId);if(!a)return;
+  setModal('Piezas de '+a.codigo+' — '+a.desc,`
+    <div class="note" style="margin-bottom:14px"><span class="ni">🔩</span> Registra las piezas críticas de este activo. Al marcarlas como reemplazadas en una OT, queda su historial aquí.</div>
+    <div id="compList" style="display:flex;flex-direction:column;gap:9px">${renderCompList(activoId)}</div>
+    <div class="sectlabel" style="margin-top:16px">Agregar pieza</div>
+    <div class="fgrid fg3">
+      <div class="field"><label>Nombre de la pieza</label><input id="c_nombre" placeholder="Ej. Rodamiento eje principal"></div>
+      <div class="field"><label>Categoría</label><select id="c_cat">${TIPOS.map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div class="field"><label>¿Crítica?</label><select id="c_crit"><option value="0">No</option><option value="1">Sí</option></select></div>
+    </div>
+    <button class="btn sm primary" style="margin-top:10px" onclick="addComponente('${activoId}')">+ Agregar pieza</button>`,
+    [{t:'Cerrar',cls:'ghost',fn:'closeModal()'}]);
+}
+function renderCompList(activoId){
+  const comps=DB.componentes.filter(c=>c.activo===activoId);
+  if(!comps.length)return '<div class="mini">Sin piezas registradas todavía.</div>';
+  return comps.map(c=>{
+    const reps=DB.reemplazos.filter(r=>r.componenteId===c.id).sort((x,y)=>(y.fecha||'').localeCompare(x.fecha||''));
+    return `<div style="display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:10px 12px">
+      <div style="flex:1"><b>${esc(c.nombre)}</b> ${c.critico?'<span class="pill pcc">Crítica</span>':''}
+        <div class="mini">${esc(c.categoria)} · Reemplazada ${reps.length}× · Última: ${reps[0]?fmtDate(reps[0].fecha):'—'}</div></div>
+      <button class="btn sm ghost" onclick="delComponente('${c.id}','${activoId}')">Eliminar</button></div>`;
+  }).join('');
+}
+async function addComponente(activoId){
+  const nombre=$('#c_nombre').value.trim();if(!nombre){toast('Ponle un nombre a la pieza');return;}
+  DB.componentes.push({id:uid('c_'),activo:activoId,nombre,categoria:$('#c_cat').value,critico:$('#c_crit').value==='1'});
+  await save();
+  $('#compList').innerHTML=renderCompList(activoId);$('#c_nombre').value='';
+}
+async function delComponente(id,activoId){
+  if(!confirm('¿Eliminar esta pieza? También se borra su historial de reemplazos.'))return;
+  DB.componentes=DB.componentes.filter(c=>c.id!==id);
+  DB.reemplazos=DB.reemplazos.filter(r=>r.componenteId!==id);
+  await save();
+  $('#compList').innerHTML=renderCompList(activoId);
 }
 function openActForm(id){
   const a=id?DB.activos.find(x=>x.id===id):{ut:'',codigo:'',desc:'',pcc:false,critP:75,critM:50,critR:0};
@@ -1047,12 +1144,14 @@ async function doFinish(id){const o=DB.ots.find(x=>x.id===id);
   if(!isBackend())advancePmr(o);await saveOtChange(o);closeModal();render();toast('OT '+o.num+' terminada ✓');}
 function otDetail(id){
   const o=DB.ots.find(x=>x.id===id);const a=activo(o.activo);const m=mecanico(o.mecanico);
+  const piezas=DB.reemplazos.filter(r=>r.otId===o.id).map(r=>DB.componentes.find(c=>c.id===r.componenteId)?.nombre).filter(Boolean);
   setModal('OT '+o.num+' — detalle',`
     <div class="fgrid fg2">${kv('Equipo',a?a.codigo+' · '+a.desc:o.equipoTxt||'—')}${kv('Ubicación técnica',a?.ut||'—')}
       ${kv('Clase',o.clase)}${kv('Prioridad',PRIORIDADES[o.prioridad])}${kv('Programada',fmtDate(o.fechaProg))}
       ${kv('Asignada a',m?m.nombre:'—')}${kv('Estado',o.status)}</div>
     <div class="field" style="margin-top:12px"><label>Descripción</label><div style="background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:11px;font-size:13px">${esc(o.desc)||'—'}</div></div>
     <div class="field" style="margin-top:12px"><label>Tareas</label><div style="font-size:13px">${(o.tareas||[]).map(t=>`<div>${t.done?'✅':'⬜'} ${esc(t.t)}</div>`).join('')||'—'}</div></div>
+    ${piezas.length?`<div class="field" style="margin-top:12px"><label>Piezas reemplazadas</label><div style="font-size:13px">🔩 ${piezas.map(esc).join(', ')}</div></div>`:''}
     ${o.comentarios?`<div class="field" style="margin-top:12px"><label>Comentarios</label><div style="font-size:13px">${esc(o.comentarios)}</div></div>`:''}`,
     [{t:'Cerrar',cls:'ghost',fn:'closeModal()'}]);
 }

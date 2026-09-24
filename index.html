@@ -182,7 +182,10 @@
       <div><div class="ttl" id="vTitle">Sistema de Mantenimiento</div><div class="crumb" id="vCrumb"></div></div>
       <div class="right" id="topRight"></div>
     </div>
-    <div class="content" id="view"></div>
+    <div class="content" id="view"><div class="login"><div class="login-box" style="text-align:center">
+      <div class="lmark">B</div><h2>Sistema de Mantenimiento</h2>
+      <p class="mini slow-hint" style="margin-top:14px">Cargando…</p>
+    </div></div></div>
   </div>
 </div>
 
@@ -1223,11 +1226,16 @@ function toast(msg){let t=$('#toast');
 
 /* ============ INIT ============ */
 (async function(){
+  const slowTimer=setTimeout(()=>{
+    const h=document.querySelector('.slow-hint');
+    if(h)h.textContent='Esto está tardando más de lo normal — el servidor puede estar arrancando tras un cambio reciente. Espera unos segundos…';
+  },6000);
   await loadBackendUrl();
   if(isBackend()){
     try{const d=await apiCall('config');DB.config=d.config;DB.mecanicos=d.mecanicos;}
     catch(e){API.url='';await loadAll();}
   } else { await loadAll(); }
+  clearTimeout(slowTimer);
   $('#brandPlant').textContent=DB.config.planta||'Planta';
   renderLogin();
   setInterval(async()=>{if(!SESSION.role||modalOpen())return;const before=JSON.stringify(DB.ots.map(o=>o.id+o.status+o.mecanico));

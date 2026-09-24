@@ -935,9 +935,14 @@ function advancePmr(ot){
 }
 
 /* ============ ACTIVOS ============ */
+let actUtFilter='';
 function actSortedList(){return DB.activos.slice().sort((a,b)=>(b.critP+b.critM+b.critR)-(a.critP+a.critM+a.critR));}
+function actUtChange(){actUtFilter=$('#act_fUt').value;filterActivos();}
 function viewActivos(){
+  const utList=[...new Set(DB.activos.map(a=>a.ut).filter(Boolean))].sort();
+  const utOpts=`<option value="">— Todas las ubicaciones —</option>`+utList.map(u=>`<option value="${esc(u)}" ${actUtFilter===u?'selected':''}>${esc(u)}</option>`).join('');
   return `<div class="toolbar"><div class="search"><span class="si">🔎</span><input id="actSearch" placeholder="Buscar código o descripción…" oninput="filterActivos()" value="${esc($('#actSearch')?.value||'')}"></div>
+    <div class="field" style="min-width:190px"><label>Ubicación técnica</label><select id="act_fUt" onchange="actUtChange()">${utOpts}</select></div>
     <button class="btn primary" onclick="openActForm()">+ Nuevo activo</button></div>
     <div class="legend" style="margin-bottom:12px">
       <span><span class="pill crit-A">A</span> &gt;125 pts</span><span><span class="pill crit-B">B</span> 75–125 pts</span>
@@ -949,7 +954,7 @@ function viewActivos(){
 function filterActivos(){const el=$('#actBody');if(el)el.innerHTML=renderActRows(actSortedList());}
 function renderActRows(list){
   const q=($('#actSearch')?.value||'').toLowerCase();
-  const f=list.filter(a=>!q||(a.codigo+' '+a.desc).toLowerCase().includes(q));
+  const f=list.filter(a=>(!actUtFilter||a.ut===actUtFilter)&&(!q||(a.codigo+' '+a.desc).toLowerCase().includes(q)));
   if(!f.length)return `<tr><td colspan="9" class="empty">Sin activos.</td></tr>`;
   return f.map(a=>{const c=calcCrit(a.critP,a.critM,a.critR);return `<tr>
     <td class="code">${esc(a.codigo)}</td><td>${esc(a.desc)} ${a.pcc?'<span class="pill pcc">PCC</span>':''}</td>

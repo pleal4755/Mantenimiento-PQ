@@ -762,7 +762,7 @@ function otCompsChecklist(activoId,otId){
   if(!comps.length)return '<div class="mini">Este activo no tiene piezas registradas (Activos → Piezas).</div>';
   const already=otId?new Set(DB.reemplazos.filter(r=>r.otId===otId).map(r=>r.componenteId)):new Set();
   return comps.map(c=>`<label style="display:flex;align-items:center;gap:9px;text-transform:none;letter-spacing:0">
-    <input type="checkbox" data-comp="${c.id}" ${already.has(c.id)?'checked':''}><span style="font-size:13.5px">${c.codigo?`<span class="code">${esc(c.codigo)}</span> `:''}${esc(c.nombre)}${c.critico?' <span class="pill pcc">Crítica</span>':''}</span></label>`).join('');
+    <input type="checkbox" data-comp="${c.id}" ${already.has(c.id)?'checked':''}><span style="font-size:13.5px">${c.codigo?`<span class="code">${esc(c.codigo)}</span> `:''}${esc(c.nombre)}${(c.cantidad||1)>1?` <span class="mini">(x${c.cantidad})</span>`:''}${c.critico?' <span class="pill pcc">Crítica</span>':''}</span></label>`).join('');
 }
 function taskRow(t,i){return `<div class="fgrid" style="grid-template-columns:auto 1fr;gap:9px;margin-bottom:8px" data-task>
   <input type="checkbox" ${t.done?'checked':''} style="width:20px;height:20px;margin-top:6px" data-tdone>
@@ -970,10 +970,14 @@ function openComponentesModal(activoId){
     <div class="note" style="margin-bottom:14px"><span class="ni">🔩</span> Registra las piezas críticas de este activo. Al marcarlas como reemplazadas en una OT, queda su historial aquí.</div>
     <div id="compList" style="display:flex;flex-direction:column;gap:9px">${renderCompList(activoId)}</div>
     <div class="sectlabel" style="margin-top:16px">Agregar pieza</div>
-    <div class="fgrid fg4">
+    <div class="fgrid fg3">
       <div class="field"><label>Código</label><input id="c_cod" maxlength="7" placeholder="Ej. RD00001" style="font-family:var(--mono);text-transform:uppercase"></div>
+      <div class="field"><label>Clasificación</label><select id="c_clase"><option>Equipo</option><option>Sub equipo</option></select></div>
       <div class="field"><label>Nombre de la pieza</label><input id="c_nombre" placeholder="Ej. Rodamiento eje principal"></div>
+    </div>
+    <div class="fgrid fg3" style="margin-top:13px">
       <div class="field"><label>Categoría</label><select id="c_cat">${TIPOS.map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div class="field"><label>Cantidad</label><input type="number" id="c_cant" min="1" value="1"></div>
       <div class="field"><label>¿Crítica?</label><select id="c_crit"><option value="0">No</option><option value="1">Sí</option></select></div>
     </div>
     <button class="btn sm primary" style="margin-top:10px" onclick="addComponente('${activoId}')">+ Agregar pieza</button>`,
@@ -985,17 +989,18 @@ function renderCompList(activoId){
   return comps.map(c=>{
     const reps=DB.reemplazos.filter(r=>r.componenteId===c.id).sort((x,y)=>(y.fecha||'').localeCompare(x.fecha||''));
     return `<div style="display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:10px 12px">
-      <div style="flex:1">${c.codigo?`<span class="code">${esc(c.codigo)}</span> `:''}<b>${esc(c.nombre)}</b> ${c.critico?'<span class="pill pcc">Crítica</span>':''}
-        <div class="mini">${esc(c.categoria)} · Reemplazada ${reps.length}× · Última: ${reps[0]?fmtDate(reps[0].fecha):'—'}</div></div>
+      <div style="flex:1">${c.codigo?`<span class="code">${esc(c.codigo)}</span> `:''}<b>${esc(c.nombre)}</b> ${(c.cantidad||1)>1?`<span class="pill">x${c.cantidad}</span>`:''} ${c.critico?'<span class="pill pcc">Crítica</span>':''}
+        <div class="mini">${esc(c.clasificacion||'Sub equipo')} · ${esc(c.categoria)} · Reemplazada ${reps.length}× · Última: ${reps[0]?fmtDate(reps[0].fecha):'—'}</div></div>
       <button class="btn sm ghost" onclick="delComponente('${c.id}','${activoId}')">Eliminar</button></div>`;
   }).join('');
 }
 async function addComponente(activoId){
   const nombre=$('#c_nombre').value.trim();if(!nombre){toast('Ponle un nombre a la pieza');return;}
   const codigo=$('#c_cod').value.trim().toUpperCase().slice(0,7);
-  DB.componentes.push({id:uid('c_'),activo:activoId,codigo,nombre,categoria:$('#c_cat').value,critico:$('#c_crit').value==='1'});
+  const cantidad=Math.max(1,+$('#c_cant').value||1);
+  DB.componentes.push({id:uid('c_'),activo:activoId,codigo,clasificacion:$('#c_clase').value,nombre,categoria:$('#c_cat').value,cantidad,critico:$('#c_crit').value==='1'});
   await save();
-  $('#compList').innerHTML=renderCompList(activoId);$('#c_nombre').value='';$('#c_cod').value='';
+  $('#compList').innerHTML=renderCompList(activoId);$('#c_nombre').value='';$('#c_cod').value='';$('#c_cant').value='1';
 }
 async function delComponente(id,activoId){
   if(!confirm('¿Eliminar esta pieza? También se borra su historial de reemplazos.'))return;

@@ -964,12 +964,14 @@ function renderActRows(list){
     <button class="btn sm ghost" onclick="openActForm('${a.id}')">Editar</button></td></tr>`;}).join('');
 }
 /* ============ COMPONENTES / PIEZAS DE UN ACTIVO ============ */
+let COMP_EDIT_ID='';
 function openComponentesModal(activoId){
   const a=DB.activos.find(x=>x.id===activoId);if(!a)return;
+  COMP_EDIT_ID='';
   setModal('Piezas de '+a.codigo+' — '+a.desc,`
     <div class="note" style="margin-bottom:14px"><span class="ni">🔩</span> Registra las piezas críticas de este activo. Al marcarlas como reemplazadas en una OT, queda su historial aquí.</div>
     <div id="compList" style="display:flex;flex-direction:column;gap:9px">${renderCompList(activoId)}</div>
-    <div class="sectlabel" style="margin-top:16px">Agregar pieza</div>
+    <div class="sectlabel" style="margin-top:16px" id="compFormTitle">Agregar pieza</div>
     <div class="fgrid fg3">
       <div class="field"><label>Código</label><input id="c_cod" maxlength="7" placeholder="Ej. RD00001" style="font-family:var(--mono);text-transform:uppercase"></div>
       <div class="field"><label>Clasificación</label><select id="c_clase"><option>Equipo</option><option>Sub equipo</option></select></div>
@@ -980,7 +982,10 @@ function openComponentesModal(activoId){
       <div class="field"><label>Cantidad</label><input type="number" id="c_cant" min="1" value="1"></div>
       <div class="field"><label>¿Crítica?</label><select id="c_crit"><option value="0">No</option><option value="1">Sí</option></select></div>
     </div>
-    <button class="btn sm primary" style="margin-top:10px" onclick="addComponente('${activoId}')">+ Agregar pieza</button>`,
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn sm primary" id="compSaveBtn" onclick="saveComponente('${activoId}')">+ Agregar pieza</button>
+      <button class="btn sm ghost" id="compCancelBtn" style="display:none" onclick="resetCompForm()">Cancelar edición</button>
+    </div>`,
     [{t:'Cerrar',cls:'ghost',fn:'closeModal()'}]);
 }
 function renderCompList(activoId){
@@ -991,22 +996,45 @@ function renderCompList(activoId){
     return `<div style="display:flex;align-items:center;gap:10px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;padding:10px 12px">
       <div style="flex:1">${c.codigo?`<span class="code">${esc(c.codigo)}</span> `:''}<b>${esc(c.nombre)}</b> ${(c.cantidad||1)>1?`<span class="pill">x${c.cantidad}</span>`:''} ${c.critico?'<span class="pill pcc">Crítica</span>':''}
         <div class="mini">${esc(c.clasificacion||'Sub equipo')} · ${esc(c.categoria)} · Reemplazada ${reps.length}× · Última: ${reps[0]?fmtDate(reps[0].fecha):'—'}</div></div>
+      <button class="btn sm ghost" onclick="editComponente('${c.id}','${activoId}')">Editar</button>
       <button class="btn sm ghost" onclick="delComponente('${c.id}','${activoId}')">Eliminar</button></div>`;
   }).join('');
 }
-async function addComponente(activoId){
+function resetCompForm(){
+  COMP_EDIT_ID='';
+  $('#c_cod').value='';$('#c_clase').value='Equipo';$('#c_nombre').value='';$('#c_cat').selectedIndex=0;$('#c_cant').value='1';$('#c_crit').value='0';
+  $('#compFormTitle').textContent='Agregar pieza';
+  $('#compSaveBtn').textContent='+ Agregar pieza';
+  $('#compCancelBtn').style.display='none';
+}
+function editComponente(id,activoId){
+  const c=DB.componentes.find(x=>x.id===id);if(!c)return;
+  COMP_EDIT_ID=id;
+  $('#c_cod').value=c.codigo||'';$('#c_clase').value=c.clasificacion||'Equipo';$('#c_nombre').value=c.nombre;
+  $('#c_cat').value=c.categoria;$('#c_cant').value=c.cantidad||1;$('#c_crit').value=c.critico?'1':'0';
+  $('#compFormTitle').textContent='Editar pieza';
+  $('#compSaveBtn').textContent='Guardar cambios';
+  $('#compCancelBtn').style.display='';
+}
+async function saveComponente(activoId){
   const nombre=$('#c_nombre').value.trim();if(!nombre){toast('Ponle un nombre a la pieza');return;}
   const codigo=$('#c_cod').value.trim().toUpperCase().slice(0,7);
   const cantidad=Math.max(1,+$('#c_cant').value||1);
-  DB.componentes.push({id:uid('c_'),activo:activoId,codigo,clasificacion:$('#c_clase').value,nombre,categoria:$('#c_cat').value,cantidad,critico:$('#c_crit').value==='1'});
+  const data={activo:activoId,codigo,clasificacion:$('#c_clase').value,nombre,categoria:$('#c_cat').value,cantidad,critico:$('#c_crit').value==='1'};
+  const editing=!!COMP_EDIT_ID;
+  if(editing){Object.assign(DB.componentes.find(c=>c.id===COMP_EDIT_ID),data);}
+  else{DB.componentes.push(Object.assign({id:uid('c_')},data));}
   await save();
-  $('#compList').innerHTML=renderCompList(activoId);$('#c_nombre').value='';$('#c_cod').value='';$('#c_cant').value='1';
+  $('#compList').innerHTML=renderCompList(activoId);
+  resetCompForm();
+  toast(editing?'Pieza actualizada':'Pieza agregada');
 }
 async function delComponente(id,activoId){
   if(!confirm('¿Eliminar esta pieza? También se borra su historial de reemplazos.'))return;
   DB.componentes=DB.componentes.filter(c=>c.id!==id);
   DB.reemplazos=DB.reemplazos.filter(r=>r.componenteId!==id);
   await save();
+  if(COMP_EDIT_ID===id)resetCompForm();
   $('#compList').innerHTML=renderCompList(activoId);
 }
 function openActForm(id){

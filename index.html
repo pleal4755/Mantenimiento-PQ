@@ -429,6 +429,25 @@ function updateBadges(){
 }
 
 /* ============ LOGIN ============ */
+let PEND_MEC={},LOGIN_MECS=[];
+async function refreshLoginCounts(){
+  if(isBackend()){
+    try{const d=await apiCall('config');DB.config=d.config;DB.mecanicos=d.mecanicos;LOGIN_MECS=d.mecanicos;PEND_MEC=d.pendientes||{};}
+    catch(e){toast('No se pudo actualizar');return;}
+  }
+  if(!SESSION.role)renderLogin();
+}
+function loginPendHtml(){
+  const lista=isBackend()?LOGIN_MECS:DB.mecanicos;
+  if(!lista.length)return '';
+  const cnt=m=>isBackend()?(PEND_MEC[m.id]||0):cargaMec(m.id);
+  return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
+    <div style="display:flex;align-items:center;margin-bottom:6px"><span class="mini">OT abiertas por mecánico</span>
+      <button class="btn sm ghost" style="margin-left:auto" title="Actualizar" onclick="refreshLoginCounts()">↻</button></div>
+    ${lista.map(m=>`<div style="display:flex;align-items:center;gap:9px;padding:5px 0">
+      <span class="dot" style="background:${m.color}"></span><span style="flex:1;font-size:13.5px">${esc(m.nombre)}</span>
+      <span class="chip ${cnt(m)?'warn':'ok'}">${cnt(m)}</span></div>`).join('')}</div>`;
+}
 function renderLogin(){
   $('#nav').innerHTML='';$('#topRight').innerHTML='';
   $('#vTitle').textContent='Acceso al sistema';$('#vCrumb').textContent=DB.config.planta||'';
@@ -446,6 +465,7 @@ function renderLogin(){
          <div class="ri">👷</div><h4>Mecánico</h4><p>Entra a tu usuario y ve tus órdenes asignadas.</p></div>
      </div>
      <div id="mecPick" style="margin-top:18px"></div>
+     ${loginPendHtml()}
      <div style="display:flex;align-items:center;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
        <span class="mini">Modo de datos:</span> ${modo}
      </div>
@@ -495,7 +515,7 @@ function afterLogin(){
   buildNav();buildTopRight();
   go(isAdmin()?'tablero':'misordenes');
 }
-function logout(){SESSION={role:null,mecId:null};API.token='';API.role='';API.mecId='';renderLogin();}
+function logout(){SESSION={role:null,mecId:null};API.token='';API.role='';API.mecId='';renderLogin();refreshLoginCounts();}
 function buildTopRight(){
   const tr=$('#topRight');
   let chip;
@@ -759,7 +779,7 @@ function otActivoChange(){
 }
 function otCompsChecklist(activoId,otId){
   const comps=DB.componentes.filter(c=>c.activo===activoId);
-  if(!comps.length)return '<div class="mini">Este activo no tiene piezas registradas (Activos → Piezas).</div>';
+  if(!comps.length)return SESSION.role==='mec'?'<div class="mini">Este equipo no tiene piezas registradas.</div>':'<div class="mini">Este activo no tiene piezas registradas (Activos → Piezas).</div>';
   const already=otId?new Set(DB.reemplazos.filter(r=>r.otId===otId).map(r=>r.componenteId)):new Set();
   return comps.map(c=>`<label style="display:flex;align-items:center;gap:9px;text-transform:none;letter-spacing:0">
     <input type="checkbox" data-comp="${c.id}" ${already.has(c.id)?'checked':''}><span style="font-size:13.5px">${c.codigo?`<span class="code">${esc(c.codigo)}</span> `:''}${esc(c.nombre)}${(c.cantidad||1)>1?` <span class="mini">(x${c.cantidad})</span>`:''}${c.critico?' <span class="pill pcc">Crítica</span>':''}</span></label>`).join('');
@@ -786,7 +806,9 @@ async function saveOt(id,solId){
 }
 function syncReemplazos(otId,activoId){
   const wrap=$('#o_compsWrap');if(!wrap)return;
-  const checked=new Set([...wrap.querySelectorAll('input[data-comp]:checked')].map(c=>c.dataset.comp));
+  applyReemplazos(otId,activoId,new Set([...wrap.querySelectorAll('input[data-comp]:checked')].map(c=>c.dataset.comp)));
+}
+function applyReemplazos(otId,activoId,checked){
   DB.reemplazos=DB.reemplazos.filter(r=>r.otId!==otId||checked.has(r.componenteId));
   const existing=new Set(DB.reemplazos.filter(r=>r.otId===otId).map(r=>r.componenteId));
   checked.forEach(cid=>{if(!existing.has(cid))DB.reemplazos.push({id:uid('r_'),otId,componenteId:cid,activoId,fecha:today()});});
@@ -1165,6 +1187,8 @@ function mecChecklist(id){
         <input type="checkbox" data-i="${i}" ${t.done?'checked':''} style="width:20px;height:20px"><span style="font-size:14px">${esc(t.t)}</span></label>`).join('')||'<span class="mini">Esta OT no tiene tareas detalladas.</span>'}
       <label style="display:flex;align-items:center;gap:11px;background:rgba(242,181,40,.08);border:1px dashed var(--amber-d);border-radius:9px;padding:11px;text-transform:none;letter-spacing:0">
         <span style="width:20px;text-align:center">🧹</span><span style="font-size:13px">TAREA FINAL: dejar el área ordenada y limpia (5S)</span></label></div>
+    <div class="sectlabel">Repuestos / partes cambiados</div>
+    <div id="o_compsWrap" style="display:flex;flex-direction:column;gap:9px">${otCompsChecklist(o.activo,o.id)}</div>
     <div class="field" style="margin-top:14px"><label>Horas reales trabajadas</label><input type="number" step="0.5" id="mc_hr" value="${o.hrsReal||0}"></div>
     <div class="field" style="margin-top:10px"><label>Comentario del técnico</label><textarea id="mc_com" placeholder="Hallazgos, repuestos usados…">${esc(o.comentarios||'')}</textarea></div>`,
     [{t:'Cerrar',cls:'ghost',fn:'closeModal()'},{t:'Guardar avance',cls:'primary',fn:`saveChecklist('${id}')`}]);
@@ -1172,7 +1196,15 @@ function mecChecklist(id){
 async function saveChecklist(id){const o=DB.ots.find(x=>x.id===id);
   $$('#mc_list input[data-i]').forEach(c=>{o.tareas[+c.dataset.i].done=c.checked;});
   o.hrsReal=+$('#mc_hr').value;o.comentarios=$('#mc_com').value.trim();if(o.status==='Asignada')o.status='En proceso';
-  await saveOtChange(o);closeModal();render();toast('Avance guardado');}
+  const checked=new Set($$('#o_compsWrap input[data-comp]:checked').map(c=>c.dataset.comp));
+  const hayPiezas=$$('#o_compsWrap input[data-comp]').length>0;
+  await saveOtChange(o);
+  if(hayPiezas){
+    applyReemplazos(o.id,o.activo,checked);
+    if(isBackend()){try{await apiCall('setReemplazos',{otId:o.id,componentIds:[...checked]});}catch(e){toast('El avance se guardó, pero no las piezas: '+e.message);closeModal();render();return;}}
+    else await save();
+  }
+  closeModal();render();toast('Avance guardado');}
 function mecFinish(id){
   const o=DB.ots.find(x=>x.id===id);
   setModal('Reportar OT terminada · '+o.num,`
@@ -1272,7 +1304,7 @@ function toast(msg){let t=$('#toast');
   },6000);
   await loadBackendUrl();
   if(isBackend()){
-    try{const d=await apiCall('config');DB.config=d.config;DB.mecanicos=d.mecanicos;}
+    try{const d=await apiCall('config');DB.config=d.config;DB.mecanicos=d.mecanicos;LOGIN_MECS=d.mecanicos;PEND_MEC=d.pendientes||{};}
     catch(e){API.url='';await loadAll();}
   } else { await loadAll(); }
   clearTimeout(slowTimer);

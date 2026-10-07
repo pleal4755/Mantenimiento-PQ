@@ -236,7 +236,7 @@ function updateStoreState(){
    Al quedar escrita aquí, TODAS las máquinas que abran este archivo se conectan
    solas a Google Sheets: el usuario final no configura nada.
    Si se deja vacío (''), el sistema funciona en modo local de demostración. */
-const BACKEND_URL_FIJA='https://script.google.com/macros/s/AKfycbxm8DlHVZwStRXbwOUWONkb-paWPpElNN_sFpGaWSwY8dIxgNOgAtc3TFI_P3LbkMYEag/exec';
+const BACKEND_URL_FIJA='';
 
 const API={url:'',token:'',role:'',mecId:''};
 function isBackend(){return !!API.url;}
@@ -429,10 +429,11 @@ function updateBadges(){
 }
 
 /* ============ LOGIN ============ */
-let PEND_MEC={},LOGIN_MECS=[];
+let PEND_MEC={},LOGIN_MECS=[],PEND_FRESH=false;
+function applyCfg(d){DB.config=d.config;DB.mecanicos=d.mecanicos;LOGIN_MECS=d.mecanicos;PEND_MEC=d.pendientes||{};}
 async function refreshLoginCounts(){
   if(isBackend()){
-    try{const d=await apiCall('config');DB.config=d.config;DB.mecanicos=d.mecanicos;LOGIN_MECS=d.mecanicos;PEND_MEC=d.pendientes||{};}
+    try{applyCfg(await apiCall('config'));PEND_FRESH=true;}
     catch(e){toast('No se pudo actualizar');return;}
   }
   if(!SESSION.role)renderLogin();
@@ -441,12 +442,13 @@ function loginPendHtml(){
   const lista=isBackend()?LOGIN_MECS:DB.mecanicos;
   if(!lista.length)return '';
   const cnt=m=>isBackend()?(PEND_MEC[m.id]||0):cargaMec(m.id);
+  const show=m=>(isBackend()&&!PEND_FRESH)?'…':cnt(m);
   return `<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--line)">
     <div style="display:flex;align-items:center;margin-bottom:6px"><span class="mini">OT abiertas por mecánico</span>
       <button class="btn sm ghost" style="margin-left:auto" title="Actualizar" onclick="refreshLoginCounts()">↻</button></div>
     ${lista.map(m=>`<div style="display:flex;align-items:center;gap:9px;padding:5px 0">
       <span class="dot" style="background:${m.color}"></span><span style="flex:1;font-size:13.5px">${esc(m.nombre)}</span>
-      <span class="chip ${cnt(m)?'warn':'ok'}">${cnt(m)}</span></div>`).join('')}</div>`;
+      <span class="chip ${(isBackend()&&!PEND_FRESH)?'':(cnt(m)?'warn':'ok')}">${show(m)}</span></div>`).join('')}</div>`;
 }
 function renderLogin(){
   $('#nav').innerHTML='';$('#topRight').innerHTML='';
@@ -479,6 +481,7 @@ function showMecPick(){
       <div class="av" style="background:${m.color}">${initials(m.nombre)}</div>
       <div><div style="font-weight:700;font-size:13.5px">${esc(m.nombre)}</div><div class="mini">${esc(m.especialidad)}</div></div></div>`).join('')}</div>`;
 }
+async function applyLoginDb(d){if(d.db){Object.assign(DB,d.db);normalizeDB();}else await loadAll();}
 let _busyAction=false;
 function guardAction(){ if(_busyAction) return false; _busyAction=true; return true; }
 function releaseAction(){ setTimeout(function(){_busyAction=false;},450); }
@@ -488,7 +491,7 @@ async function loginAdmin(){
     if(isBackend()){
       const pin=prompt('Clave de administrador:')||'';
       try{const d=await apiCall('login',{user:'admin',pin});API.token=d.token;API.role='admin';SESSION={role:'admin',mecId:null};
-        await loadAll();afterLogin();}catch(e){toast(e.message);}
+        await applyLoginDb(d);afterLogin();}catch(e){toast(e.message);}
       return;
     }
     const pin=DB.config.adminPin;
@@ -503,7 +506,7 @@ async function loginMec(id){
     if(isBackend()){
       const pin=prompt('PIN de '+m.nombre+':')||'';
       try{const d=await apiCall('login',{user:id,pin});API.token=d.token;API.role='mec';API.mecId=id;SESSION={role:'mec',mecId:id};
-        await loadAll();afterLogin();}catch(e){toast(e.message);}
+        await applyLoginDb(d);afterLogin();}catch(e){toast(e.message);}
       return;
     }
     if(m.pin){const v=prompt('PIN de '+m.nombre+':');if(v!==m.pin){toast('PIN incorrecto');return;}}
@@ -515,7 +518,7 @@ function afterLogin(){
   buildNav();buildTopRight();
   go(isAdmin()?'tablero':'misordenes');
 }
-function logout(){SESSION={role:null,mecId:null};API.token='';API.role='';API.mecId='';renderLogin();refreshLoginCounts();}
+function logout(){SESSION={role:null,mecId:null};API.token='';API.role='';API.mecId='';PEND_FRESH=false;renderLogin();refreshLoginCounts();}
 function buildTopRight(){
   const tr=$('#topRight');
   let chip;
@@ -781,8 +784,8 @@ function otCompsChecklist(activoId,otId){
   const comps=DB.componentes.filter(c=>c.activo===activoId);
   if(!comps.length)return SESSION.role==='mec'?'<div class="mini">Este equipo no tiene piezas registradas.</div>':'<div class="mini">Este activo no tiene piezas registradas (Activos → Piezas).</div>';
   const already=otId?new Set(DB.reemplazos.filter(r=>r.otId===otId).map(r=>r.componenteId)):new Set();
-  return comps.map(c=>`<label style="display:flex;align-items:center;gap:9px;text-transform:none;letter-spacing:0">
-    <input type="checkbox" data-comp="${c.id}" ${already.has(c.id)?'checked':''}><span style="font-size:13.5px">${c.codigo?`<span class="code">${esc(c.codigo)}</span> `:''}${esc(c.nombre)}${(c.cantidad||1)>1?` <span class="mini">(x${c.cantidad})</span>`:''}${c.critico?' <span class="pill pcc">Crítica</span>':''}</span></label>`).join('');
+  return comps.map(c=>`<label style="display:flex;align-items:center;gap:11px;text-transform:none;letter-spacing:0;margin:0;cursor:pointer">
+    <input type="checkbox" data-comp="${c.id}" ${already.has(c.id)?'checked':''} style="width:20px;height:20px;flex:none;margin:0;padding:0"><span style="font-size:13.5px;flex:1">${c.codigo?`<span class="code">${esc(c.codigo)}</span> `:''}${esc(c.nombre)}${(c.cantidad||1)>1?` <span class="mini">(x${c.cantidad})</span>`:''}${c.critico?' <span class="pill pcc">Crítica</span>':''}</span></label>`).join('');
 }
 function taskRow(t,i){return `<div class="fgrid" style="grid-template-columns:auto 1fr;gap:9px;margin-bottom:8px" data-task>
   <input type="checkbox" ${t.done?'checked':''} style="width:20px;height:20px;margin-top:6px" data-tdone>
@@ -1304,13 +1307,23 @@ function toast(msg){let t=$('#toast');
   },6000);
   await loadBackendUrl();
   if(isBackend()){
-    try{const d=await apiCall('config');DB.config=d.config;DB.mecanicos=d.mecanicos;LOGIN_MECS=d.mecanicos;PEND_MEC=d.pendientes||{};}
-    catch(e){API.url='';await loadAll();}
+    const CFG_KEY='cfg_'+BACKEND_URL_FIJA.slice(-14);
+    let cached=null;try{cached=await sGet(CFG_KEY);}catch(e){}
+    const fetchCfg=apiCall('config').then(d=>{applyCfg(d);PEND_FRESH=true;sSet(CFG_KEY,{config:d.config,mecanicos:d.mecanicos});});
+    if(cached&&cached.config){
+      // Pantalla de login inmediata con los datos de la última visita; se actualiza en segundo plano.
+      DB.config=cached.config;DB.mecanicos=cached.mecanicos||[];LOGIN_MECS=DB.mecanicos;
+      fetchCfg.then(()=>{if(!SESSION.role){$('#brandPlant').textContent=DB.config.planta||'Planta';renderLogin();}}).catch(()=>{});
+    } else {
+      try{await fetchCfg;}catch(e){API.url='';await loadAll();}
+    }
   } else { await loadAll(); }
   clearTimeout(slowTimer);
   $('#brandPlant').textContent=DB.config.planta||'Planta';
   renderLogin();
-  setInterval(async()=>{if(!SESSION.role||modalOpen())return;const before=JSON.stringify(DB.ots.map(o=>o.id+o.status+o.mecanico));
+  setInterval(async()=>{if(!SESSION.role||modalOpen()||document.hidden)return;
+    if(isBackend()){try{const r=await apiCall('rev');if(r.rev===DB._rev)return;}catch(e){}}  // sin cambios en el servidor: no recargar todo
+    const before=JSON.stringify(DB.ots.map(o=>o.id+o.status+o.mecanico));
     try{await loadAll();}catch(e){return;}const after=JSON.stringify(DB.ots.map(o=>o.id+o.status+o.mecanico));if(before!==after)render();},30000);
 })();
 </script>

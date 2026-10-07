@@ -236,7 +236,7 @@ function updateStoreState(){
    Al quedar escrita aquí, TODAS las máquinas que abran este archivo se conectan
    solas a Google Sheets: el usuario final no configura nada.
    Si se deja vacío (''), el sistema funciona en modo local de demostración. */
-const BACKEND_URL_FIJA='https://script.google.com/macros/s/AKfycbxm8DlHVZwStRXbwOUWONkb-paWPpElNN_sFpGaWSwY8dIxgNOgAtc3TFI_P3LbkMYEag/exec';
+const BACKEND_URL_FIJA='';
 
 const API={url:'',token:'',role:'',mecId:''};
 function isBackend(){return !!API.url;}
@@ -430,7 +430,11 @@ function updateBadges(){
 
 /* ============ LOGIN ============ */
 let PEND_MEC={},LOGIN_MECS=[],PEND_FRESH=false;
-function applyCfg(d){DB.config=d.config;DB.mecanicos=d.mecanicos;LOGIN_MECS=d.mecanicos;PEND_MEC=d.pendientes||{};}
+function applyCfg(d){
+  LOGIN_MECS=d.mecanicos;PEND_MEC=d.pendientes||{};
+  // Con sesión iniciada NO se toca DB: la config pública no trae adminPin y un guardado la escribiría en la hoja.
+  if(!SESSION.role){DB.config=d.config;DB.mecanicos=d.mecanicos;}
+}
 async function refreshLoginCounts(){
   if(isBackend()){
     try{applyCfg(await apiCall('config'));PEND_FRESH=true;}
